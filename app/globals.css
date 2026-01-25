@@ -24,3 +24,18 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* This forces the crosshair on EVERYTHING when eraser mode is active */
+.eraser-mode, 
+.eraser-mode .react-flow__pane, 
+.eraser-mode .react-flow__node, 
+.eraser-mode .react-flow__edge,
+.eraser-mode .react-flow__handle {
+  cursor: crosshair !important;
+}
+
+/* Visual feedback: show a red glow when hovering a node with the eraser */
+.eraser-mode .react-flow__node:hover {
+  outline: 2px solid #ef4444 !important;
+  box-shadow: 0 0 10px rgba(239, 68, 68, 0.4) !important;
+}
