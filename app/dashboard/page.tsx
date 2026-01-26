@@ -1,44 +1,62 @@
 // src/app/dashboard/page.tsx
 "use client";
 
-import React, { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabaseClient';
-import { Plus, Layout, LogOut, Cpu, Calendar, Trash2, Search } from 'lucide-react';
+import React, { useState } from 'react';
+import { 
+  ReactFlow, 
+  Node, 
+  Edge, 
+  useNodesState, 
+  useEdgesState, 
+  Background, 
+  Controls 
+} from 'reactflow'; // or '@xyflow/react'
+import 'reactflow/dist/style.css';
 
-// Define what a Project looks like
-type Project = {
-  id: number;
-  title: string;
-  description: string;
-  created_at: string;
-};
+// FIX: Explicitly type initialNodes as Node[] and use 'as const' for alignment
+const initialNodes: Node[] = [
+  {
+    id: 'node-1',
+    type: 'input',
+    position: { x: 250, y: 5 },
+    data: { 
+      label: 'Project Start', 
+      type: 'start', 
+      language: 'Flutter', 
+      theme: 'dark', 
+      prompt: 'Initialize project' 
+    },
+    style: {
+      backgroundColor: '#1a1a1a',
+      color: '#ffffff',
+      borderRadius: '8px',
+      textAlign: 'center' as const, // FIXED: Type cast
+      padding: '10px',
+    },
+  },
+];
 
-export default function Dashboard() {
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [newProjectTitle, setNewProjectTitle] = useState('');
-  const router = useRouter();
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [userEmail, setUserEmail] = useState('');
-  const handleDeleteProject = async (id: number) => {
-  // Confirmation is key to prevent accidental clicks
-  if (!confirm("Are you sure you want to delete this project permanently?")) return;
+export default function EditorPage({ params }: { params: { id: string } }) {
+  // Use the properly typed initialNodes here
+  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+  const [selectedNode, setSelectedNode] = useState<Node | null>(null);
 
-  try {
-    const { error } = await supabase
-      .from('projects')
-      .delete()
-      .eq('id', id);
-
-    if (error) throw error;
-
-    // Remove from local state immediately for a "snappy" UI
-    setProjects(prev => prev.filter(p => p.id !== id));
-  } catch (error: any) {
-    alert("Error deleting project: " + error.message);
-  }
-};
+  return (
+    <div style={{ width: '100vw', height: '100vh' }}>
+      <ReactFlow
+        nodes={nodes}
+        edges={edges}
+        onNodesChange={onNodesChange}
+        onEdgesChange={onEdgesChange}
+        fitView
+      >
+        <Background />
+        <Controls />
+      </ReactFlow>
+    </div>
+  );
+}
 
   // 1. Check if user is logged in & Fetch Projects
 const [userId, setUserId] = useState<string | null>(null); // Add this state

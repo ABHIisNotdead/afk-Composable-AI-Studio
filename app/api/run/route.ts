@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
 export async function POST(request: Request) {
-  // IMPORTANT: Ensure GEMINI_SYSTEM_PROMPT is set in Vercel Environment Variables
+  // Use the Key name you entered in the Vercel Dashboard
   const apiKey = process.env.GEMINI_SYSTEM_PROMPT;
 
   try {
@@ -45,65 +45,30 @@ export async function POST(request: Request) {
       currentNode = edge ? nodes.find((n: any) => n.id === edge.target) : null;
     }
 
-    // 4. AI CONFIGURATION & VALIDATION
-    // Fix: Explicitly check for apiKey to satisfy TypeScript
+    // 4. AI CONFIGURATION (FIXED: Added check for apiKey)
     if (!apiKey) {
         return NextResponse.json({ 
-            result: JSON.stringify({ 
-                type: "chat", 
-                message: "Configuration Error: API Key is missing on the server." 
-            }) 
+            result: JSON.stringify({ type: "chat", message: "Error: API Key is missing in Vercel settings." }) 
         }, { status: 500 });
     }
 
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({ 
-        model: "gemini-1.5-flash", // Note: "gemini-3-flash-preview" is likely an invalid name; updated to current stable flash
+        model: "gemini-1.5-flash", 
         generationConfig: { responseMimeType: "application/json" } 
     });
 
-    // 5. SMART MODE SWITCHING
+    // 5. SYSTEM INSTRUCTIONS
     let systemInstruction = "";
-    
     if (isRunCommand) {
         const isExport = lowerMsg.includes('approve') || lowerMsg.includes('export') || lowerMsg.includes('scaffold');
-
         if (isExport) {
-            const techReqs = projectStack.language.toLowerCase().includes('android') 
-                ? "Generate an Android Studio project structure: Include build.gradle, AndroidManifest.xml, and src/main/java folders."
-                : "Generate a VS Code project: Include package.json, index.html, and a src/ folder.";
-
-            systemInstruction = `
-                You are a Lead Software Architect.
-                TASK: Generate a PRODUCTION project scaffold for ${projectStack.language}.
-                ${techReqs}
-
-                JSON OUTPUT STRUCTURE:
-                {
-                    "type": "scaffold",
-                    "message": "Full project scaffolded.",
-                    "files": { "README.md": "...", "src/main.js": "..." },
-                    "text": "Technical summary."
-                }
-            `;
+            systemInstruction = `Lead Architect. Generate scaffold for ${projectStack.language}. Output JSON: { "type": "scaffold", "files": {...}, "text": "..." }`;
         } else {
-            systemInstruction = `
-                You are a UI Designer.
-                TASK: Generate a high-fidelity standalone HTML preview.
-                
-                CRITICAL FOR MOBILE: Include meta viewport tag.
-                
-                JSON OUTPUT STRUCTURE:
-                {
-                    "type": "preview",
-                    "standaloneFile": "<!DOCTYPE html>...",
-                    "text": "Overview."
-                }
-            `;
+            systemInstruction = `UI Designer. Generate HTML preview. Output JSON: { "type": "preview", "standaloneFile": "...", "text": "..." }`;
         }
     } else {
-        systemInstruction = `You are a Technical Consultant. Analyze: ${pipelineSteps.map(s => s.label).join(' -> ')}.
-        JSON OUTPUT: { "type": "chat", "message": "Feedback...", "text": "Analysis..." }`;
+        systemInstruction = `Consultant. Analyze: ${pipelineSteps.map(s => s.label).join(' -> ')}. JSON: { "type": "chat", "message": "..." }`;
     }
 
     const result = await model.generateContent(systemInstruction + `\nUSER MESSAGE: ${userMessage}`);
@@ -113,6 +78,6 @@ export async function POST(request: Request) {
 
   } catch (error: any) {
     console.error("Route Error:", error);
-    return NextResponse.json({ result: JSON.stringify({ type: "chat", message: "Error in generation. Check graph connections." }) });
+    return NextResponse.json({ result: JSON.stringify({ type: "chat", message: "Generation error." }) });
   }
 }
