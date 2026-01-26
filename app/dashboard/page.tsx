@@ -1,91 +1,72 @@
-// src/app/dashboard/page.tsx
-"use client";
+﻿"use client";
 
-import React, { useState } from 'react';
-import { 
-  ReactFlow, 
-  Node, 
-  Edge, 
-  useNodesState, 
-  useEdgesState, 
-  Background, 
-  Controls 
-} from 'reactflow'; // or '@xyflow/react'
-import 'reactflow/dist/style.css';
+import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { supabase } from '@/lib/supabaseClient';
+import {
+  ReactFlow,
+  Node,
+  Edge,
+  useNodesState,
+  useEdgesState,
+  Background,
+  Controls
+} from '@xyflow/react';
+import '@xyflow/react/dist/style.css';
+import {
+  Layout,
+  Cpu,
+  LogOut,
+  Plus,
+  Search,
+  Trash2,
+  Calendar
+} from 'lucide-react';
 
-// FIX: Explicitly type initialNodes as Node[] and use 'as const' for alignment
-const initialNodes: Node[] = [
-  {
-    id: 'node-1',
-    type: 'input',
-    position: { x: 250, y: 5 },
-    data: { 
-      label: 'Project Start', 
-      type: 'start', 
-      language: 'Flutter', 
-      theme: 'dark', 
-      prompt: 'Initialize project' 
-    },
-    style: {
-      backgroundColor: '#1a1a1a',
-      color: '#ffffff',
-      borderRadius: '8px',
-      textAlign: 'center' as const, // FIXED: Type cast
-      padding: '10px',
-    },
-  },
-];
-
-export default function EditorPage({ params }: { params: { id: string } }) {
-  // Use the properly typed initialNodes here
-  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
-  const [selectedNode, setSelectedNode] = useState<Node | null>(null);
-
-  return (
-    <div style={{ width: '100vw', height: '100vh' }}>
-      <ReactFlow
-        nodes={nodes}
-        edges={edges}
-        onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
-        fitView
-      >
-        <Background />
-        <Controls />
-      </ReactFlow>
-    </div>
-  );
+interface Project {
+  id: string;
+  title: string;
+  description: string;
+  created_at: string;
+  user_id: string;
 }
 
+export default function Dashboard() {
+  const router = useRouter();
+  const [loading, setLoading] = useState(true);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [userEmail, setUserEmail] = useState('');
+  const [userId, setUserId] = useState<string | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [newProjectTitle, setNewProjectTitle] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+
   // 1. Check if user is logged in & Fetch Projects
-const [userId, setUserId] = useState<string | null>(null); // Add this state
+  useEffect(() => {
+    const getData = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        router.push('/');
+        return;
+      }
 
-useEffect(() => {
-  const getData = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      router.push('/');
-      return;
-    }
-    
-    setUserEmail(user.email || '');
-    setUserId(user.id);
+      setUserEmail(user.email || '');
+      setUserId(user.id);
 
-    // Fetch projects for this specific user
-    const { data, error } = await supabase
-      .from('projects')
-      .select('*')
-      .eq('user_id', user.id) // Security: only fetch current user's projects
-      .order('created_at', { ascending: false });
+      // Fetch projects for this specific user
+      const { data, error } = await supabase
+        .from('projects')
+        .select('*')
+        .eq('user_id', user.id) // Security: only fetch current user's projects
+        .order('created_at', { ascending: false });
 
-    if (error) console.error('Error fetching projects:', error);
-    else setProjects(data || []);
-    
-    setLoading(false);
-  };
-  getData();
-}, [router]);
+      if (error) console.error('Error fetching projects:', error);
+      else setProjects(data || []);
+
+      setLoading(false);
+    };
+    getData();
+  }, [router]);
 
   // 2. Handle Logout
   const handleLogout = async () => {
@@ -95,42 +76,53 @@ useEffect(() => {
 
   // 3. Handle Create New Project
   const handleCreateProject = async (e: React.FormEvent) => {
-  e.preventDefault();
-  if (!newProjectTitle.trim() || !userId) return;
+    e.preventDefault();
+    if (!newProjectTitle.trim() || !userId) return;
 
-  setLoading(true);
-  try {
-    const { data, error } = await supabase
-      .from('projects')
-      .insert([{ 
-          title: newProjectTitle, 
-          description: 'A new composable AI flow', 
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('projects')
+        .insert([{
+          title: newProjectTitle,
+          description: 'A new composable AI flow',
           user_id: userId,
-          flow_data: {} 
-      }])
-      .select();
+          flow_data: {}
+        }])
+        .select();
 
-    if (error) throw error;
-    if (data && data[0]) {
-      router.push(`/editor/${data[0].id}`);
+      if (error) throw error;
+      if (data && data[0]) {
+        router.push(`/editor/${data[0].id}`);
+      }
+    } catch (err: any) {
+      alert(err.message);
+      setLoading(false);
     }
-  } catch (err: any) {
-    alert(err.message);
-    setLoading(false);
-  }
-};
-const [searchQuery, setSearchQuery] = useState('');
+  };
 
-// Filter projects based on the search input
-const filteredProjects = projects.filter(project =>
-  project.title.toLowerCase().includes(searchQuery.toLowerCase())
-);
+  const handleDeleteProject = async (id: string) => {
+    if (!confirm("Are you sure you want to delete this project?")) return;
+
+    const { error } = await supabase.from('projects').delete().eq('id', id);
+    if (error) {
+      console.error("Error deleting project:", error);
+      alert("Error deleting project");
+    } else {
+      setProjects(projects.filter(p => p.id !== id));
+    }
+  };
+
+  // Filter projects based on the search input
+  const filteredProjects = projects.filter(project =>
+    project.title.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   if (loading) return <div className="min-h-screen bg-slate-950 flex items-center justify-center text-slate-400">Loading Studio...</div>;
 
   return (
     <div className="min-h-screen bg-slate-950 text-white font-sans">
-      
+
       {/* Top Navigation */}
       <nav className="border-b border-slate-800 bg-slate-900/50 backdrop-blur-md sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
@@ -150,32 +142,31 @@ const filteredProjects = projects.filter(project =>
       </nav>
 
       {/* Main Content */}
-     <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-  
-  {/* Header Section */}
-  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-4">
-    <div>
-      <h1 className="text-3xl font-bold">Your Projects</h1>
-      <p className="text-slate-400 mt-1">Manage and deploy your AI pipelines.</p>
-    </div>
-    <button 
-      onClick={() => {
-        setNewProjectTitle('');
-        setIsModalOpen(true);
-      }}
-      className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-lg font-medium transition-all shadow-lg shadow-indigo-500/20"
-    >
-      <Plus className="h-5 w-5" />
-      New Flow
-    </button>
-  </div>
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
 
-  {/* Search Bar Section - Only show if there are projects */}
- {/* Search Bar Section */}
+        {/* Header Section */}
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-4">
+          <div>
+            <h1 className="text-3xl font-bold">Your Projects</h1>
+            <p className="text-slate-400 mt-1">Manage and deploy your AI pipelines.</p>
+          </div>
+          <button
+            onClick={() => {
+              setNewProjectTitle('');
+              setIsModalOpen(true);
+            }}
+            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-lg font-medium transition-all shadow-lg shadow-indigo-500/20"
+          >
+            <Plus className="h-5 w-5" />
+            New Flow
+          </button>
+        </div>
+
+        {/* Search Bar Section */}
         {projects.length > 0 && (
           <div className="relative max-w-md mb-8">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
-            <input 
+            <input
               type="text"
               placeholder="Search your flows..."
               value={searchQuery}
@@ -199,8 +190,8 @@ const filteredProjects = projects.filter(project =>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {filteredProjects.map((project) => (
-              <div 
-                key={project.id} 
+              <div
+                key={project.id}
                 onClick={() => router.push(`/editor/${project.id}`)}
                 className="group bg-slate-900 border border-slate-800 hover:border-indigo-500/50 rounded-xl p-5 transition-all hover:shadow-xl hover:shadow-indigo-500/10 cursor-pointer relative"
               >
@@ -210,7 +201,7 @@ const filteredProjects = projects.filter(project =>
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="text-[10px] text-slate-600 font-mono">ID: {project.id}</span>
-                    <button 
+                    <button
                       onClick={(e) => {
                         e.stopPropagation();
                         handleDeleteProject(project.id);
@@ -243,7 +234,7 @@ const filteredProjects = projects.filter(project =>
             <form onSubmit={handleCreateProject} className="space-y-6">
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Project Name</label>
-                <input 
+                <input
                   autoFocus
                   type="text"
                   placeholder="e.g. My Smart Assistant"
@@ -260,6 +251,6 @@ const filteredProjects = projects.filter(project =>
           </div>
         </div>
       )}
-    </div> // Closes root div
+    </div>
   );
-} // Closes Dashboard function
+}

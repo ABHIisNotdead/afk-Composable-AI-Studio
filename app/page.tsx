@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { Mail, Lock, User, ArrowRight, Loader2 } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient'; 
 import { useRouter } from 'next/navigation'; // This is essential for redirection
+import { LogOut } from 'lucide-react';
 
 export default function AuthPage() {
   const router = useRouter(); // Initialize the router
