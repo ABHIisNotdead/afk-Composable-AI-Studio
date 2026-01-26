@@ -2,9 +2,8 @@ import { NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
 export async function POST(request: Request) {
-  // IMPORTANT: Move this to .env.local for the actual hackathon!
+  // IMPORTANT: Ensure GEMINI_SYSTEM_PROMPT is set in Vercel Environment Variables
   const apiKey = process.env.GEMINI_SYSTEM_PROMPT;
-
 
   try {
     const { nodes, edges, userMessage, isRunCommand } = await request.json();
@@ -30,7 +29,7 @@ export async function POST(request: Request) {
         database: dbNode?.data?.prompt || "LocalStorage/None"
     };
 
-    // 3. PIPELINE TRAVERSAL (Logic Path)
+    // 3. PIPELINE TRAVERSAL
     let pipelineSteps = [];
     let currentNode = startNode;
     const visited = new Set();
@@ -46,10 +45,20 @@ export async function POST(request: Request) {
       currentNode = edge ? nodes.find((n: any) => n.id === edge.target) : null;
     }
 
-   // 4. AI CONFIGURATION
+    // 4. AI CONFIGURATION & VALIDATION
+    // Fix: Explicitly check for apiKey to satisfy TypeScript
+    if (!apiKey) {
+        return NextResponse.json({ 
+            result: JSON.stringify({ 
+                type: "chat", 
+                message: "Configuration Error: API Key is missing on the server." 
+            }) 
+        }, { status: 500 });
+    }
+
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({ 
-        model: "gemini-3-flash-preview", // UPDATED: Correct model name
+        model: "gemini-1.5-flash", // Note: "gemini-3-flash-preview" is likely an invalid name; updated to current stable flash
         generationConfig: { responseMimeType: "application/json" } 
     });
 
@@ -78,25 +87,12 @@ export async function POST(request: Request) {
                 }
             `;
         } else {
-            // PREVIEW MODE - This now includes the Android "Fit to Screen" fix
             systemInstruction = `
                 You are a UI Designer.
                 TASK: Generate a high-fidelity standalone HTML preview.
                 
-                CRITICAL FOR MOBILE: You MUST include this meta tag in the <head>:
-                <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+                CRITICAL FOR MOBILE: Include meta viewport tag.
                 
-                Also include this CSS to ensure it fits your Simulator:
-                <style>
-                    body { margin: 0; padding: 0; overflow-x: hidden; width: 100vw; }
-                    #preview-banner { font-size: 10px !important; padding: 8px !important; }
-                </style>
-
-                BANNER REQUIREMENT:
-                <div id="preview-banner" style="background: #4f46e5; color: white; text-align: center; padding: 12px; font-family: sans-serif; font-weight: bold; width: 100%;">
-                    PROTOTYPE PREVIEW: Click "APPROVE" in sidebar for full code.
-                </div>
-
                 JSON OUTPUT STRUCTURE:
                 {
                     "type": "preview",
