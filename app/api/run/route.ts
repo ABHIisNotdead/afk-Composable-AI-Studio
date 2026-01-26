@@ -3,7 +3,8 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 
 export async function POST(request: Request) {
   // IMPORTANT: Move this to .env.local for the actual hackathon!
-  const apiKey = "AIzaSyAlK1wJAd6aq8lX3UNeam-wIQU2odfIZd0"; 
+  const apiKey = process.env.GEMINI_SYSTEM_PROMPT;
+
 
   try {
     const { nodes, edges, userMessage, isRunCommand } = await request.json();

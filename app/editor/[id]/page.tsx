@@ -252,27 +252,13 @@ const handleSave = async () => {
       setSavedComponents([...savedComponents, newSavedItem]);
       addLog(`Remixed ${newSavedItem.label} to Library`, "success");
   };
-
- const executeAction = async (
-  userMessage: string,
+const executeAction = async (
+  userMessage: string, 
   isRun: boolean
 ): Promise<string | null> => {
   const logPrefix = isRun ? "[Compiler]" : "[Consultant]";
   addLog(`${logPrefix} Processing request...`, "info");
-  // Inside executeAction in page.tsx
-if (parsed.files || parsed.standaloneFile) {
-    const updatedFiles = parsed.standaloneFile ? { 'index.html': parsed.standaloneFile } : parsed.files;
-    setFiles(updatedFiles);
-
-    // AUTO-SAVE TO DB: Store the actual code output
-    await supabase
-      .from('projects')
-      .update({ generated_code: updatedFiles })
-      .eq('id', projectId);
-      
-    addLog("Output stored in Database.", "info");
-}
-
+  
   if (isRun) setIsGenerating(true);
 
   try {
@@ -280,63 +266,90 @@ if (parsed.files || parsed.standaloneFile) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        nodes,
-        edges,
+        nodes: nodes.map(n => ({ id: n.id, data: n.data })),
+        edges: edges.map(e => ({ source: e.source, target: e.target })),
         userMessage,
         isRunCommand: isRun,
       }),
     });
 
-    if (!response.ok) throw new Error("Server responded with an error");
+    // 1. Handle Server-Side Failures (503/429)
+    if (!response.ok) {
+        if (response.status === 503) throw new Error("Gemini is overloaded. Wait 10s.");
+        if (response.status === 429) throw new Error("Rate limit hit. Slow down!");
+        throw new Error("Server communication failed.");
+    }
 
     const data = await response.json();
-    
-    // --- BULLETPROOF JSON CLEANING ---
-    // This removes ```json ... ``` blocks if the AI includes them
-    let rawResult = data.result;
-    const jsonMatch = rawResult.match(/\{[\s\S]*\}/);
-    const cleanJson = jsonMatch ? jsonMatch[0] : rawResult;
-    
-    const parsed = JSON.parse(cleanJson);
+    if (!data.result) throw new Error("AI returned an empty response.");
 
-    /* ---------- BUILD OUTPUT ---------- */
-    // Handle both "scaffold" (multiple files) and "preview" (standaloneFile)
-    if (parsed.standaloneFile) {
-        setFiles({ 'index.html': parsed.standaloneFile });
-        setIsDeviceOpen(true);
-        addLog(`${logPrefix} Preview generated.`, "success");
-    } else if (parsed.files) {
-        setFiles(parsed.files);
-        setSidebarTab('files'); // Switch sidebar to show the new files
-        addLog(`${logPrefix} Build successful. Project scaffolded.`, "success");
+    // 2. Advanced JSON Extraction (Handles Markdown & Truncation)
+    let parsed;
+    try {
+        // Find the block between the FIRST '{' and the LAST '}'
+        const firstBracket = data.result.indexOf('{');
+        const lastBracket = data.result.lastIndexOf('}');
+        
+        if (firstBracket === -1 || lastBracket === -1) {
+            throw new Error("No valid JSON found in response.");
+        }
+
+        const cleanJson = data.result.substring(firstBracket, lastBracket + 1);
+        parsed = JSON.parse(cleanJson);
+    } catch (parseError) {
+        console.error("Parse Error Raw Data:", data.result);
+        throw new Error("Code was truncated by AI. Try a shorter prompt.");
     }
 
-    /* ---------- TEXT OUTPUT ---------- */
-    if (parsed.text) {
-      setTextOutput(parsed.text);
-      // Only switch tab if we aren't already looking at the device
-      if (!parsed.standaloneFile) setOutputTab('text');
+    /* ---------- SUCCESS PATH: Update Files & Database ---------- */
+    if (isRun && (parsed.standaloneFile || parsed.files)) {
+        const updatedFiles = parsed.standaloneFile 
+            ? { 'index.html': parsed.standaloneFile } 
+            : parsed.files;
+        
+        setFiles(updatedFiles);
+
+        // SYNC TO SUPABASE
+        const { error: dbError } = await supabase
+          .from('projects')
+          .update({ generated_code: updatedFiles })
+          .eq('id', projectId);
+          
+        if (!dbError) addLog("Cloud Sync: Success", "info");
+
+        if (parsed.standaloneFile) {
+            setIsDeviceOpen(true);
+            addLog(`${logPrefix} Preview ready for video.`, "success");
+        } else {
+            setSidebarTab('files');
+            addLog(`${logPrefix} Project built.`, "success");
+        }
     }
 
-    /* ---------- IMAGE OUTPUT ---------- */
+    /* ---------- UI UPDATES ---------- */
+    if (parsed.text) setTextOutput(parsed.text);
     if (parsed.imageUrl) {
-      setImageOutputs(prev => [...prev, parsed.imageUrl]);
-      setOutputTab('images');
+        setImageOutputs(prev => [...prev, parsed.imageUrl]);
+        setOutputTab('images');
     }
 
-    return (
-      parsed.message ??
-      (isRun ? "App built successfully!" : "Analysis complete.")
-    );
+    return parsed.message || "Action completed.";
+
   } catch (err) {
-    console.error("ExecuteAction Error:", err);
-    addLog(`Error: ${err instanceof Error ? err.message : "Engine communication failed"}`, "error");
+    const errorMsg = err instanceof Error ? err.message : "Critical Engine Error";
+    console.error("ExecuteAction Failure:", err);
+    addLog(`Error: ${errorMsg}`, "error");
+    
+    // Trigger Cooldown if it's a server overload
+    if (errorMsg.includes("overloaded")) {
+        setIsCooldown(true);
+        setTimeout(() => setIsCooldown(false), 10000);
+    }
     return null;
   } finally {
     setIsGenerating(false);
   }
 };
-
   // Inside FlowEditor component
   const handleApproveAndExport = useCallback(() => {
     addLog("Approval received. Building production scaffold...", "info");
